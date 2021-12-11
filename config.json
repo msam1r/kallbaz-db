@@ -1,0 +1,8 @@
+{
+    "port": 8080,
+    "max_queue_size": 100,
+    "log_file": "",
+    "save_file": "",
+    "debug": false,
+    "save_period": 20
+}
