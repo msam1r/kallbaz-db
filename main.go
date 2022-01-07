@@ -2,23 +2,16 @@ package main
 
 import (
 	"fmt"
-	"log"
 
-	"github.com/msam1r/kallbaz-db/db/memory"
+	"github.com/msam1r/kallbaz-db/db/record"
 )
 
 func main() {
 	fmt.Println("Welcome to KallbazDB.")
 
-	kdb := memory.NewStore(memory.Config{
-		MaxRecordSize: 1024,
-		Logger:        &log.Logger{},
-	})
+	val := record.NewValue("name", []byte("mohamed"))
 
-	val, err := kdb.Get("name")
-	if err != nil {
-		fmt.Println(err.Error())
-	}
+	a, _ := record.FromBytes(val.ToBytes())
 
-	fmt.Println(string(val))
+	fmt.Println(string(a.Value()))
 }

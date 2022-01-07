@@ -2,7 +2,9 @@ package record
 
 import (
 	"encoding/binary"
+	"errors"
 	"hash/crc32"
+	"io"
 )
 
 const (
@@ -17,6 +19,13 @@ const (
 	valLenByteSize = 4
 	metaLength     = kindByteSize + crcLen + keyLenByteSize + valLenByteSize
 )
+
+// ErrInsufficientData - is returned when the given data is not enouch to be
+// parsed into a Record
+var ErrInsufficientData = errors.New("could not parse bytes")
+
+// ErrCorruptData is returned when the data mismatches the stored checksum
+var ErrCorruptData = errors.New("the record has been corrupted")
 
 // Record - a database record
 type Record struct {
@@ -58,6 +67,13 @@ func (r *Record) IsTombstone() bool {
 	return r.kind == tombstoneKind
 }
 
+// Size returns the serialized byte size
+func (r *Record) Size() int {
+	return crcLen + kindByteSize + keyLenByteSize + valLenByteSize + len(r.key) + len(r.value)
+}
+
+// ToBytes - Serialize the record to sequence of bytes in the following
+// format: [crc][type][key length][value length][key][value]
 func (r *Record) ToBytes() []byte {
 	keyBytes := []byte(r.key)
 	keyLen := make([]byte, keyLenByteSize)
@@ -80,4 +96,46 @@ func (r *Record) ToBytes() []byte {
 	binary.BigEndian.PutUint32(crcData, crc.Sum32())
 
 	return append(crcData, data...)
+}
+
+// FromBytes - deserialize []byte into a record.
+func FromBytes(data []byte) (*Record, error) {
+	if len(data) < metaLength {
+		return nil, ErrInsufficientData
+	}
+
+	keyLenStart := crcLen + kindByteSize
+	klb := data[keyLenStart : keyLenStart+keyLenByteSize]
+	vlb := data[keyLenStart+keyLenByteSize : keyLenStart+keyLenByteSize+valLenByteSize]
+
+	crc := uint32(binary.BigEndian.Uint32(data[:4]))
+	keyLen := int(binary.BigEndian.Uint32(klb))
+	valLen := int(binary.BigEndian.Uint32(vlb))
+
+	if len(data) < metaLength+keyLen+valLen {
+		return nil, ErrInsufficientData
+	}
+
+	keyStartIdx := metaLength
+	valStartIdx := keyStartIdx + keyLen
+
+	kind := data[crcLen]
+	key := make([]byte, keyLen)
+	val := make([]byte, valLen)
+	copy(key, data[keyStartIdx:valStartIdx])
+	copy(val, data[valStartIdx:valStartIdx+valLen])
+
+	check := crc32.NewIEEE()
+	check.Write(data[4 : metaLength+keyLen+valLen])
+	if check.Sum32() != crc {
+		return nil, ErrCorruptData
+	}
+
+	return &Record{kind: kind, key: string(key), value: val}, nil
+}
+
+// Write writes the record to the writer in binary format
+func (r *Record) Write(w io.Writer) (int, error) {
+	data := r.ToBytes()
+	return w.Write(data)
 }
